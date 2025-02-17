@@ -18,6 +18,6 @@ def add_br_to_lines(input_filename, output_filename):
                 outfile.write(line_content + '<br>\n')
 
 if __name__ == '__main__':
-    input_file = 'input.html'    # 输入 HTML 文件路径
-    output_file = 'output.html'  # 输出 HTML 文件路径
+    input_file = 'aboutVOLUME.html'    # 输入 HTML 文件路径
+    output_file = 'aboutVOLUME2.html'  # 输出 HTML 文件路径
     add_br_to_lines(input_file, output_file)
