@@ -1,0 +1,78 @@
+多阶段构建（Multi-stage Builds）是一种在单个 Dockerfile 中使用多个 FROM 指令的构建技术，目的是在构建过程中分离出“构建环境”和“运行环境”，从而大大减少最终镜像的体积，并且让 Dockerfile 更加模块化、易于维护。下面详细说明这一概念和实际操作步骤：<br>
+ 1. 为什么使用多阶段构建<br>
+- 减少镜像体积  <br>
+  在传统的 Dockerfile 中，为了编译或打包应用，你可能需要在镜像中安装大量的编译工具和依赖库。但这些工具在运行时其实并不需要。多阶段构建允许你在第一阶段使用完整的构建环境，编译出最终的可执行文件或应用包，然后在后续阶段只将这些产物复制到一个干净、精简的基础镜像中，从而大大降低最终镜像的体积。<br>
+- 分离构建和运行环境  <br>
+  将构建步骤和运行环境分开，可以提高安全性和稳定性。构建环境通常包含开发工具和调试信息，而运行环境则只保留必需的运行文件。<br>
+- 构建灵活性  <br>
+  多阶段构建允许你在一个 Dockerfile 中处理多个构建阶段，可以将不同阶段命名，再根据需要从前一阶段中复制文件到下一阶段，简化了 Dockerfile 的编写和管理。<br>
+ 2. 多阶段构建的基本语法<br>
+- 多个 FROM 指令  <br>
+  Dockerfile 中可以出现多个 FROM 指令，每个 FROM 都标识一个新的构建阶段。你可以给某个阶段命名，使用 `AS` 关键字：<br>
+  ```dockerfile<br>
+  FROM golang:1.16 AS builder<br>
+   在这里进行编译构建<br>
+  WORKDIR /src<br>
+  COPY . .<br>
+  RUN go build -o myapp<br>
+  FROM alpine:3.13<br>
+   从上一个阶段复制编译好的二进制文件<br>
+  COPY --from=builder /src/myapp /usr/local/bin/myapp<br>
+  CMD ["myapp"]<br>
+  ```<br>
+- COPY --from=...  <br>
+  使用 `COPY --from=builder` 指令，你可以从前面命名为 `builder` 的阶段中复制文件到当前阶段。这样就可以只把必要的构建产物放进最终镜像中。<br>
+ 3. 详细示例<br>
+假设我们有一个用 Go 编写的应用，我们希望编译它并生成一个小巧的运行镜像：<br>
+ Dockerfile 示例<br>
+```dockerfile<br>
+ 第一阶段：构建阶段<br>
+FROM golang:1.16 AS builder<br>
+WORKDIR /go/src/app<br>
+ 复制整个项目文件到构建环境中<br>
+COPY . .<br>
+ 编译应用，生成静态链接的可执行文件<br>
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o myapp .<br>
+ 第二阶段：运行阶段<br>
+FROM alpine:3.13<br>
+ 将构建阶段的可执行文件复制到运行环境中<br>
+COPY --from=builder /go/src/app/myapp /usr/local/bin/myapp<br>
+ 设置运行时所需的环境变量或配置（如果有的话）<br>
+ENV APP_ENV=production<br>
+ 声明端口（仅作为文档用途，不自动映射）<br>
+EXPOSE 8080<br>
+ 定义容器启动时执行的命令<br>
+CMD ["myapp"]<br>
+```<br>
+ 构建和运行<br>
+1. 构建镜像  <br>
+   在项目目录中运行：<br>
+   ```bash<br>
+   docker build -t my-go-app .<br>
+   ```<br>
+   这会依次执行构建阶段和运行阶段，最终生成一个体积较小的镜像 `my-go-app`。<br>
+2. 运行容器  <br>
+   运行容器并映射端口：<br>
+   ```bash<br>
+   docker run -d -p 8080:8080 --name my-go-container my-go-app<br>
+   ```<br>
+   这样你的应用就运行在一个干净的 Alpine 环境中，且只包含编译后的二进制文件，没有多余的编译工具和依赖。<br>
+3. 检查状态  <br>
+   可以使用以下命令查看镜像和容器状态：<br>
+   - 查看镜像列表：<br>
+     ```bash<br>
+     docker images<br>
+     ```<br>
+   - 查看正在运行的容器：<br>
+     ```bash<br>
+     docker ps<br>
+     ```<br>
+   - 查看容器日志：<br>
+     ```bash<br>
+     docker logs my-go-container<br>
+     ```<br>
+ 4. 总结<br>
+- 多阶段构建 通过分离构建和运行阶段，能大幅减少最终镜像大小，同时让 Dockerfile 更加清晰、易于维护。<br>
+- 在第一阶段中，你可以使用功能齐全的基础镜像来编译或打包应用，而在后续阶段只复制必要的产物进入最终运行镜像。<br>
+- 这与传统的 `docker commit` 不同，后者是捕获容器的完整状态（包含所有文件和依赖），而多阶段构建则是有目的地只保留所需的运行文件，从而保持镜像的精简和安全性。<br>
+这种方式自 Docker 17.05 版本起就已经得到支持，非常适合生产环境中构建小巧、高效的镜像。（cite1†多阶段构建·Docker -- 从入门到实践）<br>
