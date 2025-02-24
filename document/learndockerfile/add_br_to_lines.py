@@ -23,6 +23,6 @@ def add_br_to_lines(input_filename, output_filename):
                 outfile.write(line_content + '<br>\n')
 
 if __name__ == '__main__':
-    input_file = '其它制作镜像的方式.html'    # 输入 HTML 文件路径
-    output_file = '其它制作镜像的方式2.html'  # 输出 HTML 文件路径
+    input_file = 'manifest创建多架构镜像.html'    # 输入 HTML 文件路径
+    output_file = 'manifest创建多架构镜像2.html'  # 输出 HTML 文件路径
     add_br_to_lines(input_file, output_file)
