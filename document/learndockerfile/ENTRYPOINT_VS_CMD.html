@@ -1,0 +1,98 @@
+ 为什么 `ENTRYPOINT` 做的事情不能完全用 `CMD` 来执行？<br>
+虽然 `CMD` 和 `ENTRYPOINT` 都可以用于指定容器启动时执行的命令，但它们的行为本质上不同，导致在某些情况下必须使用 `ENTRYPOINT` 而不能用 `CMD`。<br>
+ 1. `ENTRYPOINT` vs. `CMD` 的关键区别<br>
+| 对比项        | ENTRYPOINT | CMD |<br>
+||--|--|<br>
+| 是否是容器的主要进程？ | ✅ 是主要进程，适用于强制执行的命令 | ❌ 只是建议执行的命令，可被 `docker run` 直接覆盖 |<br>
+| 是否可以接收 `docker run` 传递的参数？ | ✅ 可以，`docker run` 的参数会被当作 ENTRYPOINT 的参数 | ✅ 但如果 `docker run` 传递了新命令，则 `CMD` 会被完全覆盖 |<br>
+| 是否可以用 `--entrypoint` 覆盖？ | ✅ 可以 | ❌ 不能 |<br>
+| 适用于什么情况？ | 强制执行特定程序（如 `nginx`、`python`） | 提供默认命令或默认参数 |<br>
+ 2. 为什么 `CMD` 无法替代 `ENTRYPOINT`？<br>
+ 情况 1：确保某个主程序始终运行<br>
+如果用 `CMD`，用户可以完全替换它，导致容器可能不执行预期的主进程。<br>
+示例：Web 服务器<br>
+```Dockerfile<br>
+ 使用 CMD（不推荐）<br>
+FROM nginx<br>
+CMD ["nginx", "-g", "daemon off;"]<br>
+```<br>
+如果用户运行：<br>
+```bash<br>
+docker run my-nginx echo "Hello"<br>
+```<br>
+结果是 `nginx` 不会运行，而只执行 `echo "Hello"`，然后容器退出。<br>
+改进方案（使用 ENTRYPOINT）：<br>
+```Dockerfile<br>
+ 使用 ENTRYPOINT（推荐）<br>
+FROM nginx<br>
+ENTRYPOINT ["nginx", "-g", "daemon off;"]<br>
+```<br>
+- 这样即使用户执行 `docker run my-nginx echo "Hello"`，`nginx` 仍然会运行（因为 `echo "Hello"` 会被当作 `nginx` 的参数）。<br>
+- `ENTRYPOINT` 确保 `nginx` 是这个容器的主进程，不会被替换掉。<br>
+ 情况 2：允许外部传参，而不改变主进程<br>
+如果 `CMD` 被用户提供的命令覆盖，默认行为就会丢失。<br>
+ 示例：ping 工具<br>
+```Dockerfile<br>
+ CMD（容易被覆盖）<br>
+FROM alpine<br>
+CMD ["ping", "127.0.0.1"]<br>
+```<br>
+如果用户运行：<br>
+```bash<br>
+docker run myping google.com<br>
+```<br>
+`CMD` 会被完全替换，导致它执行的是 `google.com`，而不是 `ping google.com`，容器直接崩溃。<br>
+改进方案（使用 ENTRYPOINT）：<br>
+```Dockerfile<br>
+ ENTRYPOINT（推荐）<br>
+FROM alpine<br>
+ENTRYPOINT ["ping"]<br>
+CMD ["127.0.0.1"]<br>
+```<br>
+现在：<br>
+- `docker run myping` ➝ `ping 127.0.0.1`（默认值）<br>
+- `docker run myping google.com` ➝ `ping google.com`（CMD 被替换，但 `ENTRYPOINT` 仍然生效）<br>
+ 情况 3：需要初始化脚本<br>
+如果容器启动时需要执行一些初始化命令，并且允许用户提供自定义命令，`ENTRYPOINT` 是最好的选择。<br>
+示例：一个容器启动前做一些准备<br>
+```Dockerfile<br>
+FROM ubuntu<br>
+COPY entrypoint.sh /entrypoint.sh<br>
+RUN chmod +x /entrypoint.sh<br>
+ENTRYPOINT ["/entrypoint.sh"]<br>
+```<br>
+在 `entrypoint.sh` 里：<br>
+```bash<br>
+!/bin/bash<br>
+echo "Initializing container..."<br>
+exec "$@"   运行用户提供的命令<br>
+```<br>
+运行容器：<br>
+```bash<br>
+docker run my-container echo "Hello"<br>
+```<br>
+实际执行：<br>
+```bash<br>
+Initializing container...<br>
+Hello<br>
+```<br>
+如果用 `CMD`，`entrypoint.sh` 可能被完全跳过！<br>
+ 3. 什么时候用 `ENTRYPOINT`？什么时候用 `CMD`？<br>
+✅ 使用 `ENTRYPOINT` 的场景：<br>
+- 确保某个程序始终运行（如 `nginx`, `python`, `java`）。<br>
+- 需要允许用户传递参数，而不改变主进程（如 `ping`, `mysql`）。<br>
+- 需要执行初始化脚本（如 `entrypoint.sh`）。<br>
+✅ 使用 `CMD` 的场景：<br>
+- 提供默认参数（如 `CMD ["127.0.0.1"]`）。<br>
+- 允许用户完全替换默认命令（如 `docker run myimage bash`）。<br>
+🚀 最佳实践：ENTRYPOINT + CMD<br>
+```Dockerfile<br>
+ENTRYPOINT ["ping"]<br>
+CMD ["127.0.0.1"]<br>
+```<br>
+这样可以确保主进程始终是 `ping`，但允许用户自定义目标地址。<br>
+ 4. 结论<br>
+- `ENTRYPOINT` 适用于定义主进程，确保它不会被意外替换。<br>
+- `CMD` 只是默认值，容易被 `docker run` 替换。<br>
+- `ENTRYPOINT + CMD` 是最好的组合：前者定义主进程，后者提供默认参数。<br>
+这样，你可以更好地控制 Docker 容器的行为！🚀<br>
